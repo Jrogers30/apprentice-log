@@ -1,0 +1,8 @@
+bug 1: You wrapped a dict around a list around a dict — for one zombie. Look at what you have to type every single time you want the monster's name:
+monsters['mobs'][0]['name']
+Four lookups to reach one string. That appears in five places in your file. The outer {'mobs': [...]} wrapper buys you nothing — there's no second category beside 'mobs', so the dict has exactly one key you never branch on. You added a layer that only adds typing.
+Here's the thing to internalize: the goal of the dict wasn't "nest as deep as possible." It was to bundle one monster's data into one unit. That's just:
+zombie = {"name": "zombie", "hp": 20, "attack": 5}
+Now it's zombie["name"], zombie["hp"], zombie["attack"]. One lookup. That's the whole win — name, hp, and attack travel together as one thing instead of three loose globals. When M5 comes, that's when a list enters: monsters = [zombie, goblin, troll] — a flat list of monster dicts, looped over one at a time. No 'mobs' wrapper, no fixed [0].
+This matters beyond syntax. Over-engineering — building more structure than the problem needs — is a real habit to catch early, and you just did a textbook version of it. Simpler structures that exactly fit the problem beat clever-looking nested ones every time.
+

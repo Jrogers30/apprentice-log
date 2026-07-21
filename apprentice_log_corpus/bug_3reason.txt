@@ -1,0 +1,36 @@
+bug 3: This means Flask's jsonify is trying to convert something it can't — specifically your Hero or Monster objects. You can't JSON-serialize a Python class directly. Flask knows how to handle strings, numbers, lists, and plain dicts — nothing else.
+The error is almost certainly this line:
+python"monster": {"name": monsters[0].name, ...}
+Either you still have a raw object somewhere in the response dict, or attackpwr is spelled wrong. Check these three things in your response dict — all must be plain values, not objects:
+pythonresponse = {
+    "game_id": game_id,
+    "hero": {
+        "name": hero.name,        # string ✓
+        "hp": hero.hp,            # int ✓
+        "attack": hero.attackpwr  # int ✓ — note: attackpwr not attack
+    },
+    "monster": {
+        "name": monsters[0].name,
+        "hp": monsters[0].hp,
+        "attack": monsters[0].attackpwr
+    }
+}
+The real fix — a to_dict() method. You're going to convert objects to dicts in multiple places (response, /status, /action). Don't repeat that three-line dict everywhere — add one method to Character in dungeon.py:
+pythondef to_dict(self):
+    return {
+        "name": self.name,
+        "hp": self.hp,
+        "attack": self.attackpwr
+    }
+Then everywhere in app.py you need a serializable version:
+pythonresponse = {
+    "game_id": game_id,
+    "hero": hero.to_dict(),
+    "monster": monsters[0].to_dict()
+}
+Clean, reusable, one place to change if you add new attributes later. This is also the pattern that scales into /action and /status without repeating yourself.
+Do both fixes now:
+
+Add to_dict() to Character in dungeon.py.
+Replace the response dict in new_game to use .to_dict().
+cd dungeon_game → python app.py → curl /new_game.
