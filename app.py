@@ -1,9 +1,9 @@
-from flask import Flask, jsonify, request     
-from flask_login import login_required,logout_user,login_user, LoginManager,UserMixin
+from flask import Flask, jsonify, request 
+from flask_login import login_required,logout_user,login_user, LoginManager,UserMixin, current_user
 from dotenv import load_dotenv                   
 import os
 import bcrypt                                    
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session  
 
 app = Flask(__name__)
@@ -24,6 +24,13 @@ class User(Base,UserMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     email:Mapped[str] = mapped_column(unique=True)
     password_hash: Mapped[str] 
+
+class Document(Base):
+    __tablename__ = "documents"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id:Mapped[int] = mapped_column(ForeignKey("users.id"))
+    filename: Mapped[str]
+    content: Mapped[str]
 
 Base.metadata.create_all(engine)
 
@@ -89,6 +96,41 @@ def login():
 def logout():
     logout_user()
     return jsonify({"status": "success", "message": "Logged out successfully."})
+
+@app.route("/upload", methods=["POST"])
+@login_required
+def upload():
+    if "file" not in request.files:
+        return jsonify({
+            "status": "error",
+            "message": "No file uploaded."
+        }), 400
+
+    file = request.files["file"]
+
+    try:
+        content = file.read().decode("utf-8")
+    except UnicodeDecodeError:
+        return jsonify({
+            "status": "error",
+            "message": "File must be text."
+        }), 400
+
+    document = Document(
+        user_id=current_user.id,
+        filename=file.filename,
+        content=content
+    )
+
+    with Session(engine) as session:
+        session.add(document)
+        session.flush()
+        session.commit()
+
+        return jsonify({
+            "status": "success",
+            "document_id": document.id
+        }), 201
 
 if __name__ == "__main__":
     app.run(debug=True)
