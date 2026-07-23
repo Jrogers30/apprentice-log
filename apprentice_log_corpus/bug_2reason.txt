@@ -1,1 +1,15 @@
-bug 2:  Defend hits you twice. In the hero's defend branch you wrote self.defend(); opp.attack(self) — the monster attacks during your turn. Then fight() continues to monster.take_turn(hero), where it (80% of the time) attacks again, now unblocked since defending reset. Defending = take a half hit plus a full hit. It's strictly worse than attacking. The fix is conceptual: defend should only raise the flag. The opponent attacks on their own turn; your takeDmg already handles the block when that happens. Delete the opp.attack(self) from both defend branches — same bug in Monster.
+bug 2:  Defend hits you twice. 
+In the hero's defend branch you wrote self.defend();
+
+opp.attack(self) — the monster attacks during your turn. 
+Then fight() continues to monster.take_turn(hero), 
+where it (80% of the time) attacks again, 
+
+now unblocked since defending reset.
+Defending = take a half hit plus a full hit. 
+It's strictly worse than attacking.
+
+The fix is conceptual: defend should only raise the flag. 
+The opponent attacks on their own turn; your takeDmg already handles the block when that happens.
+
+Delete the opp.attack(self) from both defend branches — same bug in Monster.

@@ -32,7 +32,62 @@ class Document(Base):
     filename: Mapped[str]
     content: Mapped[str]
 
+
+class Chunk(Base):
+    __tablename__ = "chunks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id:Mapped[int] = mapped_column(ForeignKey("documents.id"))
+    chunk_index:Mapped[int]
+    content:Mapped[str]
+    embedding: Mapped[str | None] = mapped_column(nullable=True)
+
 Base.metadata.create_all(engine)
+
+def chunk_paragraphs(text):
+    text = text.replace("\r\n", "\n")
+
+    paragraphs = text.split("\n\n")
+
+    chunks = []
+
+    for paragraph in paragraphs:
+        paragraph = paragraph.strip()
+        if paragraph:
+            chunks.append(paragraph)
+
+    return chunks
+
+
+def chunk_python(text):
+    text = text.replace("\r\n", "\n")
+    lines = text.split("\n")
+
+    chunks = []
+    curr_chunk = []
+
+    for line in lines:
+        if (line.startswith("class ") or line.startswith("def ")):
+
+            
+            if curr_chunk:
+                chunks.append("\n".join(curr_chunk))
+
+            
+            curr_chunk = [line]
+
+        else:
+           curr_chunk.append(line)
+
+
+    
+    if curr_chunk:
+        chunks.append("\n".join(curr_chunk))
+
+    
+    return chunks
+
+
+
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -106,6 +161,7 @@ def upload():
             "message": "No file uploaded."
         }), 400
 
+
     file = request.files["file"]
 
     try:
@@ -113,9 +169,25 @@ def upload():
     except UnicodeDecodeError:
         return jsonify({
             "status": "error",
-            "message": "File must be text."
+            "message": "File must be UTF-8 text."
+        }), 400
+    if not content.strip():
+        return jsonify({
+            "status": "error",
+            "message": "File is empty."
         }), 400
 
+    if file.filename.endswith(".py"):
+        chunks = chunk_python(content)
+    elif file.filename.endswith(".txt") or file.filename.endswith(".md"):
+        chunks = chunk_paragraphs(content)
+    else:
+        return jsonify({
+            "status": "error",
+            "message": "Unsupported file type."
+        }), 400
+
+    
     document = Document(
         user_id=current_user.id,
         filename=file.filename,
@@ -125,11 +197,22 @@ def upload():
     with Session(engine) as session:
         session.add(document)
         session.flush()
+
+        for index,chunk in enumerate(chunks):
+            chunk_row = Chunk(
+                document_id = document.id,
+                chunk_index= index,
+                content=chunk,
+                embedding=None
+            )
+            session.add(chunk_row)
+
         session.commit()
 
         return jsonify({
             "status": "success",
-            "document_id": document.id
+            "document_id": document.id,
+            "chunk_count": len(chunks)
         }), 201
 
 if __name__ == "__main__":
