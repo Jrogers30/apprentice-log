@@ -5,9 +5,20 @@ import os
 import bcrypt                                    
 from sqlalchemy import create_engine, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session  
+from google import genai
+from scratch_embed import cosine
+import json
+
+
+
 
 app = Flask(__name__)
 load_dotenv()
+
+
+client = genai.Client(api_key=os.environ.get("API_KEY"))
+
+
 app.secret_key = os.environ.get("SECRET_KEY")
 if not app.secret_key:
     raise RuntimeError("SECRET_KEY not set in .env")
@@ -46,14 +57,46 @@ Base.metadata.create_all(engine)
 def chunk_paragraphs(text):
     text = text.replace("\r\n", "\n")
 
-    paragraphs = text.split("\n\n")
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
 
     chunks = []
+    current = ""
 
     for paragraph in paragraphs:
-        paragraph = paragraph.strip()
-        if paragraph:
-            chunks.append(paragraph)
+        lines = paragraph.split("\n")
+        first = lines[0].strip()
+
+     
+        if first.startswith("#"):
+            if current:
+                chunks.append(current.strip())
+            current = paragraph
+            continue
+
+     
+        if first.startswith("-") or first.startswith("*"):
+            if current:
+                current += "\n\n" + paragraph
+            else:
+                current = paragraph
+            continue
+
+      
+        if len(paragraph) < 100:
+            if current:
+                current += "\n\n" + paragraph
+            else:
+                current = paragraph
+            continue
+
+       
+        if current:
+            chunks.append(current.strip())
+
+        current = paragraph
+
+    if current:
+        chunks.append(current.strip())
 
     return chunks
 
@@ -186,24 +229,37 @@ def upload():
             "status": "error",
             "message": "Unsupported file type."
         }), 400
-
     
-    document = Document(
-        user_id=current_user.id,
-        filename=file.filename,
-        content=content
-    )
+    
 
     with Session(engine) as session:
+        document = Document(
+                user_id=current_user.id,
+                filename=file.filename,
+                content=content
+        )
         session.add(document)
         session.flush()
+
+        try:
+            result = client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=chunks,
+                config={"task_type": "RETRIEVAL_DOCUMENT"}
+            )
+        except Exception:
+            session.rollback()
+            return jsonify({
+                "status": "error",
+                "message": "Failed to generate embeddings."
+            }), 500
 
         for index,chunk in enumerate(chunks):
             chunk_row = Chunk(
                 document_id = document.id,
                 chunk_index= index,
                 content=chunk,
-                embedding=None
+                embedding=json.dumps(result.embeddings[index].values)
             )
             session.add(chunk_row)
 
@@ -214,6 +270,126 @@ def upload():
             "document_id": document.id,
             "chunk_count": len(chunks)
         }), 201
+
+def retrieve(question,user_id,k=3):
+    with Session(engine) as session:
+        result = client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=question,
+            config={"task_type": "RETRIEVAL_QUERY"}
+        )
+
+        ques_vector = result.embeddings[0].values
+
+        chunks = (
+            session.query(Chunk,Document.filename)
+            .join(Document)
+            .filter(Document.user_id == user_id)
+            .all()
+        )
+
+        scored_chunks = []
+
+        for chunk,filename in chunks:
+            if chunk.embedding is None:
+                continue
+
+            chunk_vector = json.loads(chunk.embedding)
+            score = cosine(ques_vector,chunk_vector)
+            scored_chunks.append((score,chunk,filename))
+
+        scored_chunks.sort(
+            key=lambda x: x[0],
+            reverse=True
+        )
+        return scored_chunks[:k]
+
+@app.route("/ask", methods=["POST"])
+@login_required
+def ask():
+    data = request.get_json()
+
+    if not data or "question" not in data:
+        return jsonify({
+            "status": "error",
+            "message": "Question is required."
+        }), 400
+
+    question = data["question"]
+
+    
+    results = retrieve(
+        question,
+        current_user.id,
+        k=3
+    )
+    NO_MATCH_THRESHOLD = .65
+   
+    if not results or results[0][0] < NO_MATCH_THRESHOLD:
+        return jsonify({
+            "status": "no_match",
+            "message": "No relevant information found."
+        }), 200
+
+
+    
+    context = ""
+
+    for _, chunk, filename in results:
+        context += f"""
+        Source: {filename}
+        Chunk: {chunk.chunk_index}
+
+        {chunk.content}
+        ---
+        """
+
+
+    prompt = f"""
+        You are a helpful assistant.
+        Answer the user's question using only the provided context.
+        If the context does not contain the answer, say you do not know.
+
+        Context:
+        {context}
+
+        Question:
+        {question}
+    """
+
+
+    
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=prompt
+        )
+        answer = response.text
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
+    
+    citations = []
+
+    for _, chunk, filename in results:
+        citations.append({
+            "filename": filename,
+            "chunk_index": chunk.chunk_index
+        })
+
+
+    return jsonify({
+        "status": "success",
+        "answer": answer,
+        "citations": citations
+    })
+
+
+        
+
 
 if __name__ == "__main__":
     app.run(debug=True)
