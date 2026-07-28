@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request 
+from flask import Flask, jsonify, request,render_template
 from flask_login import login_required,logout_user,login_user, LoginManager,UserMixin, current_user
 from dotenv import load_dotenv                   
 import os
@@ -6,7 +6,7 @@ import bcrypt
 from sqlalchemy import create_engine, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session  
 from google import genai
-from scratch_embed import cosine
+import math
 import json
 
 
@@ -26,7 +26,15 @@ if not app.secret_key:
 login_manager = LoginManager()
 login_manager.init_app(app)
 
-engine = create_engine("sqlite:///apprentice_log.db")
+db_url = os.environ.get(
+    "DATABASE_URL",
+    "sqlite:///apprentice_log.db"
+)
+
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(db_url)
 class Base(DeclarativeBase):
     pass
 
@@ -53,6 +61,19 @@ class Chunk(Base):
     embedding: Mapped[str | None] = mapped_column(nullable=True)
 
 Base.metadata.create_all(engine)
+
+def cosine(a, b):
+    dot = sum(x * y for x, y in zip(a, b))
+
+    mag_a = math.sqrt(sum(x * x for x in a))
+    mag_b = math.sqrt(sum(y * y for y in b))
+
+    if mag_a == 0 or mag_b == 0:
+        return 0
+
+    return dot / (mag_a * mag_b)
+
+
 
 def chunk_paragraphs(text):
     text = text.replace("\r\n", "\n")
@@ -388,7 +409,9 @@ def ask():
     })
 
 
-        
+@app.route("/")
+def home():
+    return render_template("index.html")        
 
 
 if __name__ == "__main__":

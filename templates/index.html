@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Apprentice Log</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+
+  
+  <div id="auth-screen">
+    <h1>The Apprentice Log</h1>
+    <p class="subtitle">Ask questions about your own coding history.</p>
+    <div class="card">
+      <label>Email</label>
+      <input type="email" id="email" placeholder="you@example.com">
+      <label>Password</label>
+      <input type="password" id="password" placeholder="••••••••">
+      <div class="row">
+        <button onclick="doLogin()">Log In</button>
+        <button class="secondary" onclick="doRegister()">Register</button>
+      </div>
+      <div class="msg" id="auth-msg"></div>
+    </div>
+  </div>
+
+  
+  <div id="app-screen" class="hidden">
+    <div class="topbar">
+      <h1>The Apprentice Log</h1>
+      <button class="secondary" onclick="doLogout()">Log Out</button>
+    </div>
+
+    <div class="card">
+      <label>Upload a document (.py, .txt, .md)</label>
+      <input type="file" id="file-input" accept=".py,.txt,.md">
+      <button onclick="doUpload()">Upload</button>
+      <div class="msg" id="upload-msg"></div>
+    </div>
+
+    <div class="card">
+      <label>Ask a question about your documents</label>
+      <textarea id="question" placeholder="What bug did I keep repeating?"></textarea>
+      <button onclick="doAsk()">Ask</button>
+      <div class="msg" id="ask-msg"></div>
+      <div id="answer-area"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+
+</body>
+</html>
